@@ -58,6 +58,17 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(name, "rule_based")
         self.assertIn(move, g.legal_moves())
 
+    def test_place_ordering_avoids_tiger(self):
+        # 添子排序必须站在羊这边：排在首位的落点不能是虎的邻点（虎跳吃 = 虎−羊−空）
+        from engines.rule_based import _score_move
+        g = Game()
+        g.player = SHEEP
+        spec = g.spec
+        tigers = [i for i, v in enumerate(g.board) if v == TIGER]
+        risky = {j for i in tigers for j in spec.adj[i]}
+        best = max(g.legal_moves(), key=lambda m: _score_move(g, m))
+        self.assertNotIn(best[1], risky)
+
     def test_legacy_entry_point(self):
         g = Game()
         move = get_best_move(g.board[:], g.player, g.phase, g.sheep_in_hand, depth=2)

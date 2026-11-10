@@ -17,17 +17,13 @@ import os
 import time
 from typing import List, Optional, Tuple
 
-from core.rules import EMPTY, SHEEP, TIGER, Game
+from core.rules import SHEEP, TIGER, Game
+from evaluate import evaluate_tiger as _tiger_score   # E 的评估函数
 
 INF = 10 ** 9
 WIN_SCORE = 1_000_000
 
-# 评估权重（A 文档建议值的基础上做了一点细化）
-W_CAPTURE = 1000      # 每吃一只羊
-W_TIGER_MOBILITY = 10  # 虎的机动性
-W_SHEEP_MOBILITY = 3   # 羊的机动性（对虎是负分）
-W_TIGER_CENTER = 4     # 虎越靠近中心越好
-W_BLOCKED_SHEEP = 6    # 被虎贴身压住的羊
+W_TIGER_CENTER = 4     # 走法排序用的中心度权重
 
 
 class _Timeout(Exception):
@@ -41,32 +37,26 @@ def _center_bonus(index: int, points) -> int:
 
 
 def evaluate(game: Game) -> int:
-    """静态评估：正分对虎有利，负分对羊有利。"""
+    """静态评估：正分对虎有利，负分对羊有利。
+
+    终局分留在搜索层给（带“越快赢越好”的步数偏好），
+    非终局的启发式分一律来自 E 的 evaluate.py，不在引擎里另立一套。
+    """
     if game.winner == TIGER:
         return WIN_SCORE - game.moves      # 越快赢越好
     if game.winner == SHEEP:
         return -WIN_SCORE + game.moves
     if game.winner == 0:
         return 0
-
-    score = game.captured * W_CAPTURE
-    score += len(game.legal_moves(TIGER)) * W_TIGER_MOBILITY
-    score -= len(game.legal_moves(SHEEP)) * W_SHEEP_MOBILITY
-
-    points = game.spec.points
-    board = game.board
-    for i, v in enumerate(board):
-        if v == TIGER:
-            score += _center_bonus(i, points)
-            # 虎旁边的羊：相当于“已经架好炮”，略微加分
-            for j in game.spec.adj[i]:
-                if board[j] == SHEEP:
-                    score += W_BLOCKED_SHEEP
-    return score
+    return _tiger_score(game)
 
 
 def _score_move(game: Game, move: Tuple) -> int:
-    """走法排序：吃子 > 向中心靠 > 其他。好的走法先搜，剪枝更狠。"""
+    """走法排序：吃子 > 向中心靠 > 其他。好的走法先搜，剪枝更狠。
+
+    place 只可能由羊执行。羊贴着虎等于把子送到虎嘴边（虎跳吃就是“虎−羊−空”），
+    所以靠近虎要**减**分；靠近自己人（抱团堵路）和靠中心才是加分。
+    """
     kind = move[0]
     if kind == "eat":
         return 10_000
@@ -74,14 +64,16 @@ def _score_move(game: Game, move: Tuple) -> int:
     if kind == "move":
         frm, to = move[1], move[2]
         return 100 + _center_bonus(to, points) - _center_bonus(frm, points)
-    # place：越靠近虎、越靠近中心越优先
+
     to = move[1]
+    r, c = points[to]
     score = _center_bonus(to, points)
     for i, v in enumerate(game.board):
-        if v == TIGER:
-            r1, c1 = points[to]
-            r2, c2 = points[i]
-            score += max(0, 12 - (abs(r1 - r2) + abs(c1 - c2)))
+        dist = abs(points[i][0] - r) + abs(points[i][1] - c)
+        if v == SHEEP:
+            score += max(0, 12 - dist)         # 抱团
+        elif v == TIGER:
+            score -= 3 * max(0, 12 - dist)     # 离虎越近越危险
     return score
 
 
