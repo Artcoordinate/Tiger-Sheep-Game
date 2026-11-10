@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>国王与大臣棋 · 37 点</title>
+<link rel="stylesheet" href="../static/css/style.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <h1>国王与大臣棋</h1>
+      <p>37 点棋盘 · 2 王 vs 24 大臣</p>
+    </div>
+    <div class="rule-tag">
+      <label for="mode-select">对手</label>
+      <select id="mode-select">
+        <option value="ai">电脑（大臣）</option>
+        <option value="human">真人双人</option>
+      </select>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <section class="board-wrap">
+      <canvas id="board"></canvas>
+
+      <div class="overlay hidden" id="overlay">
+        <div class="overlay-card">
+          <div class="overlay-icon" id="over-icon">♔</div>
+          <h2 id="over-title">对局结束</h2>
+          <p id="over-desc"></p>
+          <button class="btn primary" id="over-restart">再来一局</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel">
+
+      <div class="turn-card" id="turn-card">
+        <span class="turn-dot" id="turn-dot"></span>
+        <div class="turn-body">
+          <small>当前回合</small>
+          <strong id="turn-text">白方 · 大臣</strong>
+        </div>
+      </div>
+
+      <ul class="stats">
+        <li>
+          <span>大臣在场</span>
+          <b id="stat-minister">8</b>
+        </li>
+        <li>
+          <span>大臣手中</span>
+          <b id="stat-hand">16</b>
+        </li>
+        <li>
+          <span>回合步数</span>
+          <b id="stat-ply">0</b>
+        </li>
+        <li>
+          <span>大臣被吃</span>
+          <b id="stat-eaten">0</b>
+        </li>
+      </ul>
+
+      <p class="hint" id="hint">点击自己的棋子选中，再点发亮的相邻空位移动。</p>
+
+      <div class="btns">
+        <button class="btn" id="btn-restart">重新开始</button>
+        <button class="btn" id="btn-undo">悔棋</button>
+      </div>
+
+      <div class="legend">
+        <div class="legend-row">
+          <span class="piece king"></span>
+          <span>王（黑）· 2 枚</span>
+        </div>
+        <div class="legend-row">
+          <span class="piece minister"></span>
+          <span>大臣（白）· 8 在场 + 16 待放</span>
+        </div>
+      </div>
+
+      <p class="footnote">
+        棋盘拓扑与规则取自 A 的 board.py / rules.py<br>
+        37 点 · 76 连边 · 王先走 · 大臣前 16 手添子
+      </p>
+
+    </aside>
+
+  </main>
+</div>
+
+<script src="../static/js/board_data.js"></script>
+<script src="../static/js/rules_stub.js"></script>
+<script src="../static/js/api.js"></script>
+<script src="../static/js/board.js"></script>
+<script src="../static/js/game.js"></script>
+</body>
+</html>
