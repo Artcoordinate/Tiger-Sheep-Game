@@ -11,24 +11,14 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from core.rules import Game, SHEEP
 from engines.rule_based import choose_move
+from generate_moves import game_from_state
 
 
 def get_best_move(board: List[int], player: int, phase: int,
                   remaining_sheep: int, depth: int = 3) -> Optional[tuple]:
     """兼容旧接口：给一个 37 长棋盘，返回当前方的合法走法（或 None）。"""
-    if len(board) != 37:
-        raise ValueError("board 必须是 37 长数组（0 空 / 1 虎 / 2 羊）")
-
-    g = Game()
-    g.board = list(board)
-    g.player = player
-    g.phase = phase
-    g.sheep_in_hand = remaining_sheep
-    g.captured = 24 - board.count(SHEEP) - remaining_sheep
-    g.moves = 0
-    g._check_end()
+    g = game_from_state(board, phase, player, remaining_sheep)
     if g.is_over():
         return None
 
