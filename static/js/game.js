@@ -172,7 +172,8 @@
     el.turnDot.className = 'turn-dot' + (isKing ? ' king' : '');
     el.turnCard.className = 'turn-card' + (isKing ? ' active-king' : '');
 
-    el.btnUndo.disabled = state.history.length === 0;
+    el.btnUndo.disabled = state.history.length === 0 ||
+      (aiEnabled && humanSide !== R.RULE.firstPlayer && state.history.length < 2);
   }
 
   function setHint(text, warn) {
@@ -293,7 +294,7 @@
 
   /* ---------------------------------------------------------- 点击 */
   canvas.addEventListener('click', function (e) {
-    if (!state || state.over || aiBusy) return;
+    if (!state || state.over || aiBusy || (aiEnabled && state.turn !== humanSide)) return;
 
     const idx = view.hitTest(e.clientX, e.clientY);
 
@@ -358,6 +359,8 @@
 
   el.btnUndo.addEventListener('click', function () {
     if (aiBusy || !state.history.length) return;
+    // 电脑先手的开局一步不可单独撤销，否则退回无法操作的电脑回合。
+    if (aiEnabled && humanSide !== R.RULE.firstPlayer && state.history.length < 2) return;
 
     restore(state.history.pop());
     // 人机模式下退回人类回合：电脑一步 + 人类一步一起撤
