@@ -38,18 +38,37 @@
   };
 
   let state = null;
-  let mode = 'ai';              // 'ai' 人机对弈 | 'human' 真人双人
+  let mode = 'ai';              // 'ai' 电脑执大臣 | 'ai-king' 电脑执王 | 'human' 真人双人
   let aiBusy = false;           // 电脑思考中，锁住鼠标
   let seq = 0;                  // 对局代数，用来作废旧的对局定时器
 
-  const HUMAN_SIDE = R.KING;    // 人机模式下人执王（规则规定王先走）
-  const AI_SIDE = R.MIN;        // 电脑执大臣
+  let aiEnabled = false;        // 本局有没有电脑对手（false = 真人双人）
+  let humanSide = R.KING;       // 人执哪一方
+  let aiSide = R.MIN;           // 电脑执哪一方
+
+  /* 按右上角下拉推导「谁执哪一方」。王先走，所以电脑执王时开局就轮到它。 */
+  function applyMode() {
+    mode = el.modeSelect ? el.modeSelect.value : 'ai';
+    aiEnabled = (mode === 'ai' || mode === 'ai-king');
+    aiSide = (mode === 'ai-king') ? R.KING : R.MIN;
+    humanSide = (aiSide === R.KING) ? R.MIN : R.KING;
+  }
+
+  /* 演示 / 截图入口用：强制本地双人，不触发电脑 */
+  function forceHuman() {
+    mode = 'human';
+    aiEnabled = false;
+  }
+
+  function sideName(side) {
+    return side === R.KING ? '王' : '大臣';
+  }
 
   /* ---------------------------------------------------------- 状态 */
   function newGame() {
     aiBusy = false;
     seq++;
-    mode = el.modeSelect ? el.modeSelect.value : 'ai';
+    applyMode();
 
     state = {
       board: L.initBoard.slice(),
@@ -69,16 +88,16 @@
     //   index.html#demo  → 选中王，展示跳吃红圈
     //   index.html#place → 添子阶段，展示所有可放点位
     if (location.hash === '#demo') {
-      mode = 'human';
+      forceHuman();
       state.selected = L.tigerStart[0];
       state.targets = R.movesOf(state, state.selected);
     } else if (location.hash === '#place') {
-      mode = 'human';
+      forceHuman();
       state.turn = R.MIN;
       state.targets = R.legalMoves(state);
     } else if (location.hash === '#aiplay') {
       // 演示：人机对局进行中的画面（王先吃一手，大臣补一手）
-      mode = 'human';
+      forceHuman();
       applyToState({ kind: 'eat', from: 8, over: 12, to: 16 });
       applyToState({ kind: 'place', from: -1, over: -1, to: 18 });
     }
@@ -126,8 +145,8 @@
   }
 
   function hintForTurn() {
-    if (mode === 'ai' && state.turn === AI_SIDE) {
-      return '轮到电脑（大臣）。';
+    if (aiEnabled && state.turn === aiSide) {
+      return '轮到电脑（' + sideName(aiSide) + '）。';
     }
     if (state.phase === 1 && state.turn === R.MIN) {
       return '添子阶段：点任意空点放下大臣（手里还有 ' + state.inHand + ' 枚）。';
@@ -148,7 +167,8 @@
     el.eaten.textContent = state.captured;
 
     const isKing = state.turn === R.KING;
-    el.turnText.textContent = isKing ? '黑方 · 王' : '白方 · 大臣';
+    const who = aiEnabled ? (state.turn === aiSide ? ' · 电脑' : ' · 你') : '';
+    el.turnText.textContent = (isKing ? '黑方 · 王' : '白方 · 大臣') + who;
     el.turnDot.className = 'turn-dot' + (isKing ? ' king' : '');
     el.turnCard.className = 'turn-card' + (isKing ? ' active-king' : '');
 
@@ -213,12 +233,12 @@
 
   /* ---------------------------------------------------------- 电脑应招 */
   function maybeAI() {
-    if (mode !== 'ai' || state.over) return;
-    if (state.turn !== AI_SIDE) return;
+    if (!aiEnabled || state.over) return;
+    if (state.turn !== aiSide) return;
     if (!window.AI) return;
 
     aiBusy = true;
-    setHint('电脑（大臣）正在思考…');
+    setHint('电脑（' + sideName(aiSide) + '）正在思考…');
 
     const my = seq;
     // 加一点延迟，让“AI 思考”在白板上看得出来
@@ -341,7 +361,7 @@
 
     restore(state.history.pop());
     // 人机模式下退回人类回合：电脑一步 + 人类一步一起撤
-    if (mode === 'ai' && state.turn !== HUMAN_SIDE && state.history.length) {
+    if (aiEnabled && state.turn !== humanSide && state.history.length) {
       restore(state.history.pop());
     }
 
