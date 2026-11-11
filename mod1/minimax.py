@@ -1,7 +1,7 @@
 # minimax.py —— 旧 9 点原型的历史入口，现已转发到 37 点正式引擎
 # =====================================================
 # 原来的 9 点迷你棋盘实现（mini_graph / generate_moves / evaluate）已停止维护，
-# 正式搜索见 engines/rule_based.py（Alpha-Beta + 迭代加深 + 限时）。
+# 正式搜索见 mod1/rule_based.py（Alpha-Beta + 迭代加深 + 限时）。
 #
 # 这里保留 A 文档里约定的 get_best_move 四参数签名，方便旧调用方无痛迁移：
 #   get_best_move(board, player, phase, remaining_sheep, depth=3)
@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from engines.rule_based import choose_move
-from generate_moves import game_from_state
+from .generate_moves import game_from_state
+from .rule_based import choose_move
 
 
 def get_best_move(board: List[int], player: int, phase: int,
