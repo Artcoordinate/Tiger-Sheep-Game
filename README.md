@@ -21,26 +21,34 @@
 | `app.py`、`backend.py` | C 的 Flask 接口与状态边界（校验 37 长、子力守恒、phase 一致） |
 | `mod1/` | **D 的算法（第一版）**：Alpha-Beta + 迭代加深 + 限时，内含 `rule_based.py`（搜索）、`generate_moves.py`（生成+排序）、`evaluate.py`（E 的评估）、`minimax.py`（旧签名兼容） |
 | `engines/adapter.py` | C 的引擎选择层（原样未改）：`choose(game)` 按 `TIGER_ENGINE` 动态导入 `engines.<名字>`，返回 `(走法, 引擎名)` |
+| `mod2/` | **D 的算法（第二版）**：MCTS（UCT），`mcts.py` 里是选择/扩展/模拟/回传和统一接口 |
 | `engines/rule_based.py` | 一行转发壳 → `mod1.rule_based`，只为满足 adapter 的默认导入名 |
+| `engines/mcts.py` | 一行转发壳 → `mod2.mcts`，adapter 白名单里本来就有 `mcts` |
 | `engines/mock.py` | 联调用假引擎（接口测试专用） |
 | `static/`、`templates/` | B 的 Canvas 前端，`api.js` 轮询异步 AI 任务 |
 | `scripts/export_board.py` | `core/board.py` → `static/js/board_data.js`，改棋盘后重跑 |
-| `tests/` | 16 项测试：5 项接口 + 11 项引擎 |
+| `tests/` | 24 项测试：5 项接口 + 19 项引擎（含 mod2） |
 | `legacy/` | 旧 9 点原型存档，只做参考 |
 
-算法按版本目录组织：`mod1/` 是第一版，以后加 MCTS 版就建 `mod2/`，对外同样暴露
-`NAME`、`choose_move(game)`、`evaluate(game)`；再在 `engines/` 下加一个同名一行转发壳
-（如 `engines/mcts.py` 里写 `from mod2.rule_based import choose_move, evaluate`），
-`$env:TIGER_ENGINE` 指向它就能切换，adapter 不用改。注意 adapter 有引擎名白名单，
-新名字要 C 在 `engines/adapter.py` 里补一个。
+算法按版本目录组织：`mod1/` 是 Alpha-Beta 版，`mod2/` 是 MCTS 版，都只对外暴露
+`NAME`、`choose_move(game)`、`evaluate(game)`。再加第三版就在 `engines/` 下放一个同名一行
+转发壳（照抄 `engines/mcts.py`），`$env:TIGER_ENGINE` 指向它就能切换，adapter 不用改。
+注意 adapter 有引擎名白名单，新名字要 C 在 `engines/adapter.py` 里补一个。
 
 ## 引擎参数
 
 ```powershell
-$env:TIGER_ENGINE = "mock"        # 默认 rule_based（即 mod1）；mock 仅联调
+$env:TIGER_ENGINE = "mcts"        # 默认 rule_based（即 mod1）；可选 mcts/mod2、mock
 $env:TIGER_DEPTH = "5"            # 迭代加深上限，默认 4
 $env:TIGER_TIME_LIMIT = "2.0"     # 每步软时间上限（秒），默认 1.0
 $env:TIGER_ENGINE_API = "legacy"  # 走老的四参数引擎签名
+
+# mod2（MCTS）专属
+$env:TIGER_MCTS_TIME = "2.0"      # 每步思考秒数，默认 1.5
+$env:TIGER_MCTS_PLAYOUTS = "800"  # 模拟次数上限，默认 0 = 只按时间
+$env:TIGER_MCTS_ROLLOUT = "80"    # 单次模拟封顶手数
+$env:TIGER_MCTS_C = "1.414"       # UCB1 探索系数
+$env:TIGER_MCTS_SEED = "7"        # 固定随机种子，便于复现
 ```
 
 超时或终局返回 `None`（前端显示"无可用走法"）。搜索用 `Game.copy()`，不改调用方棋局。
