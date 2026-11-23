@@ -8,12 +8,13 @@ from flask import Flask, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 from backend import load_state, dump_state, move_tuple, move_object
 from core.rules import Game
-from engines.adapter import choose
+from engines.adapter import choose, resolve_engine, AVAILABLE_ENGINES
+from records import validate_record
 
 
 def create_app():
     app = Flask(__name__)
-    app.config['MAX_CONTENT_LENGTH'] = 16384
+    app.config['MAX_CONTENT_LENGTH'] = 262144
     pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix='ai')
     slots = BoundedSemaphore(4)
     jobs, lock = {}, Lock()
@@ -51,9 +52,17 @@ def create_app():
         g.apply(move_tuple(data.get('move')))
         return jsonify(state=dump_state(g))
 
-    def compute(g):
+    @app.get('/api/engines')
+    def engines():
+        return jsonify(engines=list(AVAILABLE_ENGINES), default=resolve_engine())
+
+    @app.post('/api/records/validate')
+    def record_validate():
+        return jsonify(**validate_record(body().get('record')))
+
+    def compute(g, selected_engine):
         try:
-            move, engine = choose(g)
+            move, engine = choose(g, selected_engine)
             if move is not None:
                 g.apply(move)
             return dict(move=move_object(move), state=dump_state(g), engine=engine)
@@ -62,7 +71,9 @@ def create_app():
 
     @app.post('/api/ai')
     def ai():
-        g = load_state(body().get('state'))
+        data = body()
+        selected_engine = resolve_engine(data.get('engine'))
+        g = load_state(data.get('state'))
         with lock:
             now = monotonic()
             for key, (created, future) in list(jobs.items()):
@@ -72,11 +83,11 @@ def create_app():
                 return jsonify(error='AI 队列已满，请稍后重试'), 429
             key = uuid4().hex
             try:
-                jobs[key] = (now, pool.submit(compute, g))
+                jobs[key] = (now, pool.submit(compute, g, selected_engine))
             except Exception:
                 slots.release()
                 raise
-        return jsonify(taskId=key, status='pending'), 202
+        return jsonify(taskId=key, status='pending', engine=selected_engine), 202
 
     @app.get('/api/tasks/<key>')
     def task(key):

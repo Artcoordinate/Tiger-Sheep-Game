@@ -11,8 +11,9 @@ window.API = {
     if (!response.ok) throw new Error(result.error || '请求失败');
     return result;
   },
-  async ai(state) {
-    const job = await this.request('/api/ai', {state});
+  async ai(state, engine) {
+    const payload = engine ? {state: state, engine: engine} : {state: state};
+    const job = await this.request('/api/ai', payload);
     const start = Date.now();
     while (Date.now() - start < 60000) {
       const result = await this.request('/api/tasks/' + job.taskId);
@@ -22,4 +23,4 @@ window.API = {
     throw new Error('AI 等待超时，请重新开始；后台线程可能仍在计算');
   }
 };
-window.AI = {chooseMove: state => window.API.ai(state)};
+window.AI = {chooseMove: (state, engine) => window.API.ai(state, engine)};

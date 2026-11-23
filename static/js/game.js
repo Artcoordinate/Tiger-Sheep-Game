@@ -30,6 +30,16 @@
     btnRestart: document.getElementById('btn-restart'),
     btnUndo: document.getElementById('btn-undo'),
     modeSelect: document.getElementById('mode-select'),
+    engineSelect: document.getElementById('engine-select'),
+    recordList: document.getElementById('record-list'),
+    recordCount: document.getElementById('record-count'),
+    recordEmpty: document.getElementById('record-empty'),
+    archiveCount: document.getElementById('archive-count'),
+    btnReplayExit: document.getElementById('btn-replay-exit'),
+    btnExportSgf: document.getElementById('btn-export-sgf'),
+    btnImportSgf: document.getElementById('btn-import-sgf'),
+    btnExportAll: document.getElementById('btn-export-all'),
+    fileInput: document.getElementById('file-input'),
     overlay: document.getElementById('overlay'),
     overIcon: document.getElementById('over-icon'),
     overTitle: document.getElementById('over-title'),
@@ -45,6 +55,11 @@
   let aiEnabled = false;        // 本局有没有电脑对手（false = 真人双人）
   let humanSide = R.KING;       // 人执哪一方
   let aiSide = R.MIN;           // 电脑执哪一方
+
+  const ARCHIVE_KEY = 'tiger_sheep_archive_v1';
+  let records = [];             // 当前这一局的着法（棋谱侧栏用）
+  let replayIndex = -1;         // >= 0 表示正在回看第 N 手
+  let archive = loadArchive();  // 已存进 localStorage 的完整对局
 
   /* 按右上角下拉推导「谁执哪一方」。王先走，所以电脑执王时开局就轮到它。 */
   function applyMode() {
@@ -69,6 +84,8 @@
     aiBusy = false;
     seq++;
     applyMode();
+    records = [];
+    replayIndex = -1;
 
     state = {
       board: L.initBoard.slice(),
@@ -82,6 +99,9 @@
       lastMove: null,
       history: [],
       over: false,
+      result: null,
+      reason: '',
+      archived: false,
     };
 
     // 演示 / 截图入口：
@@ -98,13 +118,29 @@
     } else if (location.hash === '#aiplay') {
       // 演示：人机对局进行中的画面（王先吃一手，大臣补一手）
       forceHuman();
-      applyToState({ kind: 'eat', from: 8, over: 12, to: 16 });
-      applyToState({ kind: 'place', from: -1, over: -1, to: 18 });
+      const demo = [
+        { side: 'king', move: { kind: 'eat', from: 8, over: 12, to: 16 } },
+        { side: 'minister', move: { kind: 'place', from: -1, over: -1, to: 18 } },
+      ];
+      for (let i = 0; i < demo.length; i++) {
+        state.history.push(snapshot());
+        applyToState(demo[i].move);
+        records.push({
+          side: demo[i].side,
+          kind: demo[i].move.kind,
+          from: demo[i].move.from,
+          over: demo[i].move.over,
+          to: demo[i].move.to,
+          after: snapshot(),
+        });
+      }
     }
 
     hideOverlay();
     setHint(hintForTurn());
     render();
+    renderRecords();
+    updateArchiveUI();
     maybeAI();
   }
 
@@ -215,6 +251,17 @@
     state.selected = -1;
     state.targets = [];
 
+    replayIndex = -1;
+    records.push({
+      side: mover === R.KING ? 'king' : 'minister',
+      kind: move.kind,
+      from: move.from,
+      over: move.over,
+      to: move.to,
+      after: snapshot(),
+    });
+    renderRecords();
+
     view.pulseAt(move.to);
 
     if (move.kind === 'place') {
@@ -247,7 +294,7 @@
       if (my !== seq) return;          // 期间点过重新开始 / 换模式，作废
       if (!state || state.over) { aiBusy = false; return; }
       try {
-        const mv = await window.AI.chooseMove(snapshot());
+        const mv = await window.AI.chooseMove(snapshot(), engineName());
         if (my !== seq) return;
         aiBusy = false;
         if (!mv) { checkEnd(); return; }
@@ -269,6 +316,10 @@
     state.over = true;
     state.selected = -1;
     state.targets = [];
+    state.result = winner === R.KING ? 'king_win'
+      : (winner === R.MIN ? 'minister_win' : 'draw');
+    state.reason = desc;
+    archiveGame();
     render();
 
     if (winner === R.KING) {
@@ -295,6 +346,10 @@
   /* ---------------------------------------------------------- 点击 */
   canvas.addEventListener('click', function (e) {
     if (!state || state.over || aiBusy || (aiEnabled && state.turn !== humanSide)) return;
+    if (replayIndex >= 0) {
+      setHint('正在回看第 ' + (replayIndex + 1) + ' 手，点棋谱栏上方「回到当前」继续对局。', true);
+      return;
+    }
 
     const idx = view.hitTest(e.clientX, e.clientY);
 
@@ -346,6 +401,257 @@
     clearSel();
   });
 
+  /* ---------------------------------------------------------- 棋谱 */
+  function engineName() {
+    return el.engineSelect ? el.engineSelect.value : 'rule_based';
+  }
+
+  function engineLabel() {
+    return engineName() === 'mcts' ? 'MCTS' : 'Alpha-Beta';
+  }
+
+  function describeMove(rec) {
+    if (rec.kind === 'place') return '放 ' + rec.to;
+    if (rec.kind === 'eat') return rec.from + ' ×' + rec.over + ' → ' + rec.to;
+    return rec.from + ' → ' + rec.to;
+  }
+
+  function renderRecords() {
+    if (!el.recordList) return;
+    el.recordCount.textContent = records.length + ' 手';
+    if (el.recordEmpty) el.recordEmpty.hidden = records.length > 0;
+    if (el.btnReplayExit) el.btnReplayExit.classList.toggle('hidden', replayIndex < 0);
+
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < records.length; i++) {
+      const rec = records[i];
+      const li = document.createElement('li');
+      li.className = 'record-item' + (i === replayIndex ? ' active' : '');
+      li.dataset.index = String(i);
+
+      const no = document.createElement('b');
+      no.textContent = String(i + 1);
+
+      const side = document.createElement('span');
+      side.className = 'rec-side ' + (rec.side === 'king' ? 'king' : 'min');
+      side.textContent = rec.side === 'king' ? '王' : '臣';
+
+      const mv = document.createElement('span');
+      mv.className = 'rec-move';
+      mv.textContent = describeMove(rec);
+
+      li.appendChild(no);
+      li.appendChild(side);
+      li.appendChild(mv);
+      frag.appendChild(li);
+    }
+    el.recordList.innerHTML = '';
+    el.recordList.appendChild(frag);
+  }
+
+  function showReplay(index) {
+    if (index < 0 || index >= records.length) return;
+    replayIndex = index;
+    const snap = records[index].after;
+    view.setState({
+      board: snap.board, turn: snap.turn, phase: snap.phase,
+      inHand: snap.inHand, captured: snap.captured, ply: snap.ply,
+      lastMove: snap.lastMove, selected: -1, targets: [],
+    });
+    setHint('回看第 ' + (index + 1) + ' 手：'
+      + (records[index].side === 'king' ? '王 ' : '大臣 ') + describeMove(records[index]));
+    renderRecords();
+  }
+
+  function exitReplay() {
+    if (replayIndex < 0) return;
+    replayIndex = -1;
+    view.setState(state);
+    setHint(hintForTurn());
+    renderRecords();
+  }
+
+  /* ---------------------------------------------------------- 存档 */
+  function loadArchive() {
+    try {
+      const raw = localStorage.getItem(ARCHIVE_KEY);
+      const list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function saveArchive() {
+    try {
+      localStorage.setItem(ARCHIVE_KEY, JSON.stringify(archive));
+    } catch (error) {
+      setHint('本地存档失败，浏览器可能禁用了 localStorage。', true);
+    }
+  }
+
+  function currentGame() {
+    const aiLabel = '电脑（' + engineLabel() + '）';
+    return {
+      version: 1,
+      engine: engineName(),
+      mode: mode,
+      humanSide: aiEnabled ? (humanSide === R.KING ? 'king' : 'minister') : null,
+      result: state.result || 'draw',
+      reason: state.reason || '',
+      date: today(),
+      blackName: aiEnabled && aiSide === R.KING ? aiLabel : '玩家',
+      whiteName: aiEnabled && aiSide === R.MIN ? aiLabel : '玩家',
+      moves: records.map(function (rec) {
+        return { side: rec.side, kind: rec.kind, from: rec.from, over: rec.over, to: rec.to };
+      }),
+    };
+  }
+
+  function archiveGame() {
+    if (!records.length || state.archived) return;
+    state.archived = true;
+    archive.push(currentGame());
+    saveArchive();
+    updateArchiveUI();
+  }
+
+  function updateArchiveUI() {
+    if (el.archiveCount) el.archiveCount.textContent = String(archive.length);
+    if (el.btnExportAll) {
+      el.btnExportAll.textContent = '导出全部棋谱（' + archive.length + ' 局）';
+    }
+  }
+
+  /* ---------------------------------------------------------- 导入导出 */
+  function today() {
+    // 用本地日期，避免 00:00-08:00（UTC+8）导出时差一天
+    const d = new Date();
+    const pad = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
+  function stamp() {
+    const d = new Date();
+    const pad = function (n) { return String(n).padStart(2, '0'); };
+    return '' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate())
+      + '_' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+  }
+
+  function download(filename, text) {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1200);
+  }
+
+  function exportCurrent() {
+    if (!records.length) {
+      setHint('还没落子，先下一局再导出。', true);
+      return;
+    }
+    download('国王与大臣棋_' + stamp() + '.sgf', SGF.gameToSGF(currentGame()));
+    setHint('已导出本局 ' + records.length + ' 手。');
+  }
+
+  function exportAll() {
+    if (!archive.length) {
+      setHint('棋谱库还是空的，下完一局会自动存进去。', true);
+      return;
+    }
+    download('国王与大臣棋_棋谱库_' + archive.length + '局_' + stamp() + '.sgf',
+      SGF.archiveToSGF(archive));
+    setHint('已导出 ' + archive.length + ' 局棋谱。');
+  }
+
+  function sameMove(a, b) {
+    if (a.kind !== b.kind || a.to !== b.to) return false;
+    if (a.kind !== 'place' && a.from !== b.from) return false;
+    if (a.kind === 'eat' && a.over !== b.over) return false;
+    return true;
+  }
+
+  function importGame(game) {
+    seq++;
+    aiBusy = false;
+    mode = 'human';
+    aiEnabled = false;
+    if (el.modeSelect) el.modeSelect.value = 'human';
+    records = [];
+    replayIndex = -1;
+
+    state = {
+      board: L.initBoard.slice(),
+      turn: R.RULE.firstPlayer,
+      phase: 1,
+      inHand: L.sheepInHand,
+      captured: 0,
+      ply: 0,
+      selected: -1,
+      targets: [],
+      lastMove: null,
+      history: [],
+      over: false,
+      result: null,
+      reason: '',
+      archived: true,
+    };
+
+    let failed = -1;
+    for (let i = 0; i < game.moves.length; i++) {
+      const raw = game.moves[i];
+      const mv = { kind: raw.kind, from: raw.from, over: raw.over, to: raw.to };
+      const legal = R.legalMoves(state).some(function (m) { return sameMove(m, mv); });
+      if (!legal) { failed = i; break; }
+
+      const before = snapshot();
+      applyToState(mv);
+      state.history.push(before);
+      records.push({
+        side: raw.side === 'king' ? 'king' : 'minister',
+        kind: mv.kind, from: mv.from, over: mv.over, to: mv.to,
+        after: snapshot(),
+      });
+    }
+
+    hideOverlay();
+    const res = R.checkEnd(state);
+    if (res) {
+      state.over = true;
+      state.result = res.winner === R.KING ? 'king_win'
+        : (res.winner === R.MIN ? 'minister_win' : 'draw');
+      state.reason = res.reason || '';
+    }
+
+    render();
+    renderRecords();
+    updateArchiveUI();
+
+    if (failed >= 0) {
+      setHint('棋谱第 ' + (failed + 1) + ' 手不合法，已停在前 ' + records.length + ' 手。', true);
+    } else if (records.length) {
+      showReplay(records.length - 1);
+      setHint('已导入 ' + records.length + ' 手（引擎：' + (game.engine || '未知') + '）。'
+        + '点任意一手回看，或点「回到当前」接着下。');
+    } else {
+      setHint('这份棋谱里没有可重放的走法。', true);
+    }
+  }
+
+  function importText(text) {
+    const games = SGF.parseSGF(text);
+    if (!games.length) {
+      setHint('没读到棋谱：文件为空，或不是本程序导出的 SGF。', true);
+      return;
+    }
+    importGame(games[0]);
+  }
+
   /* ---------------------------------------------------------- 按钮 */
   el.btnRestart.addEventListener('click', newGame);
   el.overRestart.addEventListener('click', newGame);
@@ -362,16 +668,69 @@
     // 电脑先手的开局一步不可单独撤销，否则退回无法操作的电脑回合。
     if (aiEnabled && humanSide !== R.RULE.firstPlayer && state.history.length < 2) return;
 
+    replayIndex = -1;
+    let undone = 0;
     restore(state.history.pop());
+    undone++;
     // 人机模式下退回人类回合：电脑一步 + 人类一步一起撤
     if (aiEnabled && state.turn !== humanSide && state.history.length) {
       restore(state.history.pop());
+      undone++;
     }
+    // 棋谱跟着回退，不然侧栏会留着已经撤掉的着法
+    if (undone > 0 && records.length) records.length = Math.max(0, records.length - undone);
 
     hideOverlay();
     setHint('已悔棋，回到第 ' + state.ply + ' 手。' + hintForTurn().replace(/^.*?：/, ''));
     render();
+    renderRecords();
   });
+
+  /* ---------------------------------------------------------- 棋谱与导入导出 */
+  if (el.engineSelect) {
+    el.engineSelect.addEventListener('change', function () {
+      setHint('算法切到 ' + engineLabel() + '，下一步电脑应招开始生效。');
+    });
+  }
+
+  if (el.recordList) {
+    el.recordList.addEventListener('click', function (e) {
+      const item = e.target && e.target.closest ? e.target.closest('.record-item') : null;
+      if (!item) return;
+      showReplay(parseInt(item.dataset.index, 10));
+    });
+  }
+
+  if (el.btnReplayExit) {
+    el.btnReplayExit.addEventListener('click', exitReplay);
+  }
+
+  if (el.btnExportSgf) {
+    el.btnExportSgf.addEventListener('click', exportCurrent);
+  }
+
+  if (el.btnExportAll) {
+    el.btnExportAll.addEventListener('click', exportAll);
+  }
+
+  if (el.btnImportSgf && el.fileInput) {
+    el.btnImportSgf.addEventListener('click', function () {
+      el.fileInput.click();
+    });
+    el.fileInput.addEventListener('change', function (e) {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function () {
+        importText(String(reader.result || ''));
+      };
+      reader.onerror = function () {
+        setHint('读取文件失败，换个 .sgf 或 .txt 再试。', true);
+      };
+      reader.readAsText(file, 'utf-8');
+      e.target.value = '';
+    });
+  }
 
   /* ---------------------------------------------------------- 启动 */
   newGame();
