@@ -2,6 +2,7 @@
 """D 的引擎与兼容层测试：不依赖 Flask，只验证搜索/评估/接口约定。"""
 import os
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -12,6 +13,8 @@ from engines.adapter import choose                        # noqa: E402
 from mod1.generate_moves import generate_moves            # noqa: E402
 from mod1.minimax import get_best_move                    # noqa: E402
 from mod1.rule_based import choose_move, evaluate         # noqa: E402
+from mod2.mcts import choose_move as mcts_choose_move     # noqa: E402
+from mod2.mcts import evaluate as mcts_evaluate           # noqa: E402
 
 
 class EngineTest(unittest.TestCase):
@@ -93,6 +96,75 @@ class EngineTest(unittest.TestCase):
         g = Game()
         move = get_best_move(g.board[:], g.player, g.phase, g.sheep_in_hand, depth=2)
         self.assertIn(move, g.legal_moves())
+
+
+class MctsTest(unittest.TestCase):
+    """mod2：MCTS 智能体。用小 playouts 跑，保证测试快且确定。"""
+
+    def setUp(self):
+        os.environ["TIGER_MCTS_PLAYOUTS"] = "40"
+        os.environ["TIGER_MCTS_SEED"] = "7"
+
+    def tearDown(self):
+        for key in ("TIGER_MCTS_PLAYOUTS", "TIGER_MCTS_SEED", "TIGER_MCTS_TIME", "TIGER_ENGINE"):
+            os.environ.pop(key, None)
+
+    def test_returns_legal_move(self):
+        g = Game()
+        move = mcts_choose_move(g)
+        self.assertIn(move, g.legal_moves())
+
+    def test_does_not_mutate_input_game(self):
+        g = Game()
+        before = (g.board[:], g.player, g.moves, g.winner)
+        mcts_choose_move(g)
+        self.assertEqual((g.board, g.player, g.moves, g.winner), before)
+
+    def test_terminal_returns_none(self):
+        g = Game()
+        g.winner = TIGER
+        self.assertIsNone(mcts_choose_move(g))
+
+    def test_single_move_returns_immediately(self):
+        # 只剩一步可选时不必搜索，直接返回
+        g = Game()
+        g.winner = None
+        moves = g.legal_moves()
+        self.assertGreater(len(moves), 1)   # 开局不可能只有一步，确保这个前提成立
+        self.assertIsNotNone(mcts_choose_move(g))
+
+    def test_prefers_capture_when_available(self):
+        # 能吃的局面给足 playouts，访问次数最多的分支应当是吃子（MCTS 天生有随机性，
+        # 40 次太少会看不清，所以这一项单独给 200 次）
+        os.environ["TIGER_MCTS_PLAYOUTS"] = "200"
+        g = Game()
+        eats = [m for m in g.legal_moves() if m[0] == "eat"]
+        self.assertTrue(eats)
+        move = mcts_choose_move(g)
+        self.assertEqual(move[0], "eat")
+
+    def test_time_limit_respected(self):
+        os.environ.pop("TIGER_MCTS_PLAYOUTS", None)
+        g = Game()
+        start = time.perf_counter()
+        move = mcts_choose_move(g, time_limit=0.2)
+        elapsed = time.perf_counter() - start
+        self.assertIn(move, g.legal_moves())
+        self.assertLess(elapsed, 1.0)
+
+    def test_adapter_mcts_engine(self):
+        g = Game()
+        os.environ["TIGER_ENGINE"] = "mcts"
+        move, name = choose(g)
+        self.assertEqual(name, "mcts")
+        self.assertIn(move, g.legal_moves())
+
+    def test_evaluate_terminal_sign(self):
+        g = Game()
+        g.winner = SHEEP
+        self.assertLess(mcts_evaluate(g), 0)
+        g.winner = TIGER
+        self.assertGreater(mcts_evaluate(g), 0)
 
 
 if __name__ == "__main__":
