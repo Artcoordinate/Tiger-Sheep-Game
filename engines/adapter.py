@@ -2,12 +2,22 @@ import importlib
 import os
 
 
-def choose(game):
+AVAILABLE_ENGINES = ('rule_based', 'mcts', 'mock')
+
+
+def resolve_engine(name=None):
+    name = os.environ.get('TIGER_ENGINE', 'rule_based') if name is None else name
+    if not isinstance(name, str) or name not in AVAILABLE_ENGINES:
+        raise ValueError('没有这个引擎；可选 rule_based / mcts / mock')
+    if os.environ.get('TIGER_ENGINE_API') == 'legacy' and name != 'mock':
+        raise ValueError('正式引擎使用 choose_move(game)，请清除 TIGER_ENGINE_API=legacy')
+    return name
+
+
+def choose(game, engine=None):
     # D 可提供 choose_move(game)，或旧版四参数 choose_move。
     # 默认使用正式引擎 rule_based；联调/对照可用 TIGER_ENGINE=mock。
-    name = os.environ.get('TIGER_ENGINE', 'rule_based')
-    if name not in ('mock', 'rule_based', 'mcts', 'cnn', 'alphazero'):
-        raise RuntimeError('未知引擎')
+    name = resolve_engine(engine)
     module = importlib.import_module('engines.' + name)
     if os.environ.get('TIGER_ENGINE_API') == 'legacy':
         move = module.choose_move(game.board[:], game.phase, game.player, game.sheep_in_hand)

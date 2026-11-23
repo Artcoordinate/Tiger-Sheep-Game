@@ -14,13 +14,22 @@
       <h1>国王与大臣棋</h1>
       <p>37 点棋盘 · 2 王 vs 24 大臣</p>
     </div>
-    <div class="rule-tag">
-      <label for="mode-select">对手</label>
-      <select id="mode-select">
-        <option value="ai">电脑执大臣 · 我执王</option>
-        <option value="ai-king">电脑执王 · 我执大臣</option>
-        <option value="human">真人双人</option>
-      </select>
+    <div class="topbar-tags">
+      <div class="rule-tag">
+        <label for="mode-select">对手</label>
+        <select id="mode-select">
+          <option value="ai">电脑执大臣 · 我执王</option>
+          <option value="ai-king">电脑执王 · 我执大臣</option>
+          <option value="human">真人双人</option>
+        </select>
+      </div>
+      <div class="rule-tag">
+        <label for="engine-select">算法</label>
+        <select id="engine-select">
+          <option value="rule_based">Alpha-Beta</option>
+          <option value="mcts">MCTS</option>
+        </select>
+      </div>
     </div>
   </header>
 
@@ -38,6 +47,19 @@
         </div>
       </div>
     </section>
+
+    <aside class="record-panel">
+      <div class="record-head">
+        <span>棋谱</span>
+        <span class="record-count" id="record-count">0 手</span>
+      </div>
+      <button class="btn record-exit hidden" id="btn-replay-exit">← 回到当前</button>
+      <ol class="record-list" id="record-list"></ol>
+      <p class="record-empty" id="record-empty">
+        还没有落子。走一步就会记在这里，点任意一手可以回看当时的局面。
+      </p>
+      <div class="record-foot">已存 <b id="archive-count">0</b> 局棋谱</div>
+    </aside>
 
     <aside class="panel">
 
@@ -75,6 +97,14 @@
         <button class="btn" id="btn-undo">悔棋</button>
       </div>
 
+      <div class="btns">
+        <button class="btn" id="btn-export-sgf">导出本局</button>
+        <button class="btn" id="btn-import-sgf">导入棋谱</button>
+      </div>
+
+      <button class="btn wide" id="btn-export-all">导出全部棋谱（0 局）</button>
+      <input type="file" id="file-input" accept=".sgf,.txt,text/plain" hidden>
+
       <div class="legend">
         <div class="legend-row">
           <span class="piece king"></span>
@@ -98,6 +128,7 @@
 
 <script src="../static/js/board_data.js"></script>
 <script src="../static/js/rules_stub.js"></script>
+<script src="../static/js/sgf.js"></script>
 <script src="../static/js/api.js"></script>
 <script src="../static/js/board.js"></script>
 <script src="../static/js/game.js"></script>
